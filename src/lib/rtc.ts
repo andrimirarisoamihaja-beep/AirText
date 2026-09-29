@@ -115,6 +115,7 @@ class PeerSession {
     const ident = this.identity;
     if (!ident) return;
 
+    // Charge les serveurs de relais WebRTC au démarrage
     await fetchIceServers();
 
     this.baseKey = await K.deriveBaseKey(ident.pseudo, ident.code);
@@ -292,6 +293,7 @@ class PeerSession {
     while (!this.dead && !this.abort.signal.aborted) {
       try {
         if (this.channelOpen) {
+          // Une fois connecté, on ralentit drastiquement la boucle
           await sleep(3000);
           continue;
         }
@@ -301,7 +303,7 @@ class PeerSession {
           this.abort.signal,
         );
 
-        consecutive404 = 0; // Réinitialise le compteur après succès
+        consecutive404 = 0; // Réinitialise le compteur d'erreurs en cas de succès
 
         if (this.dead || this.channelOpen) return;
 
@@ -309,6 +311,10 @@ class PeerSession {
           await this.answerOffer(snap.offer);
         }
         for (const c of snap.candidates) await this.addCandidate(c);
+
+        // ⚡ ACCÉLÉRATION: Polling rapide pendant l'attente du pair
+        await sleep(600);
+
       } catch (e) {
         if (this.dead || this.abort.signal.aborted) return;
 
@@ -316,7 +322,7 @@ class PeerSession {
           consecutive404++;
           const room = this.room();
 
-          // Ne marque "expired" QUE SI la durée réelle est dépassée OU si 3 erreurs 404 consécutives surviennent
+          // Vérifie la véritable expiration, ou force après 3 échecs successifs (protection glitch réseau)
           const isRealTimeout = room?.roomExpiresAt
             ? Date.now() >= room.roomExpiresAt
             : false;
@@ -330,7 +336,7 @@ class PeerSession {
             return;
           }
 
-          // En cas de simple hoquet réseau, on ré-enregistre la salle discrètement
+          // Tentative discrète de ré-enregistrement
           await this.hostEnsure();
           await sleep(2000);
           continue;
@@ -418,7 +424,9 @@ class PeerSession {
         }
       }
       for (const c of snap.candidates) await this.addCandidate(c);
-      await sleep(1500);
+
+      // ⚡ ACCÉLÉRATION: Polling rapide pendant la poignée de main
+      await sleep(500);
     }
   }
 
@@ -634,7 +642,10 @@ class PeerSession {
     const room = this.room();
     if (!room) return;
     if (msg.newEndsAt <= room.endsAt) return;
+
+    // Calcul et stockage de la durée exacte de prolongation
     const addMs = msg.newEndsAt - room.endsAt;
+
     const store = useApp.getState();
     store.addMessage(this.id, {
       id: msg.sysId,
@@ -644,6 +655,7 @@ class PeerSession {
       sys: {
         type: "extend",
         newEndsAt: msg.newEndsAt,
+        addMs,
         fromMe: false,
         state: "pending",
         fromName: room.peerName ?? "pair",
@@ -780,6 +792,7 @@ export async function requestExtend(roomId: string, addMs: number): Promise<void
     sys: {
       type: "extend",
       newEndsAt,
+      addMs,
       fromMe: true,
       state: "pending",
       fromName: room.selfPseudo,
