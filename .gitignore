@@ -1,0 +1,54 @@
+# Dépendances
+node_modules
+.pnpm-debug.log
+.yarn-integrity
+.pnp.cjs
+.pnp.loader.mjs
+
+# Build Next.js
+.next
+out
+
+# Développement local et cache
+.turbo
+.cache
+.eslintcache
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Fichiers d'environnement (secrets, clés API)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.test
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Tests et couverture
+coverage
+*.lcov
+
+# Fichiers d'édition / IDE
+.idea
+.vscode
+*.code-workspace
+.project
+.settings
+
+# Base de données locale (si SQLite locale en dev)
+*.sqlite
+*.sqlite3
+*.db
+
+# Fichiers de build système / runtime
+dist
+build
+
+# Dossiers de gestion des paquets (si utilisations manuelles)
+bower_components
