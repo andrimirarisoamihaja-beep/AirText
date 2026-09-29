@@ -46,7 +46,7 @@ async function fetchIceServers(): Promise<RTCIceServer[]> {
       }
     }
   } catch {
-    /* fallback silencieux */
+    /* fallback STUN silencieux */
   }
   return cachedIceServers;
 }
@@ -287,6 +287,8 @@ class PeerSession {
 
   private async hostLoop(): Promise<void> {
     await this.hostEnsure();
+    let consecutive404 = 0;
+
     while (!this.dead && !this.abort.signal.aborted) {
       try {
         if (this.channelOpen) {
@@ -298,6 +300,9 @@ class PeerSession {
           { action: "poll", id: this.id, role: "host" },
           this.abort.signal,
         );
+
+        consecutive404 = 0; // Réinitialise le compteur après succès
+
         if (this.dead || this.channelOpen) return;
 
         if (snap.offer && snap.offer !== this.lastOffer) {
@@ -306,14 +311,29 @@ class PeerSession {
         for (const c of snap.candidates) await this.addCandidate(c);
       } catch (e) {
         if (this.dead || this.abort.signal.aborted) return;
+
         if (e instanceof SignalError && e.status === 404) {
+          consecutive404++;
           const room = this.room();
-          if (this.channelOpen || room?.status === "connected") {
-            await this.hostEnsure();
-            continue;
+
+          // Ne marque "expired" QUE SI la durée réelle est dépassée OU si 3 erreurs 404 consécutives surviennent
+          const isRealTimeout = room?.roomExpiresAt
+            ? Date.now() >= room.roomExpiresAt
+            : false;
+
+          if (isRealTimeout || consecutive404 >= 3) {
+            if (this.channelOpen || room?.status === "connected") {
+              await this.hostEnsure();
+              continue;
+            }
+            this.patch({ status: "expired" });
+            return;
           }
-          this.patch({ status: "expired" });
-          return;
+
+          // En cas de simple hoquet réseau, on ré-enregistre la salle discrètement
+          await this.hostEnsure();
+          await sleep(2000);
+          continue;
         }
         await sleep(2500);
       }
@@ -614,6 +634,7 @@ class PeerSession {
     const room = this.room();
     if (!room) return;
     if (msg.newEndsAt <= room.endsAt) return;
+    const addMs = msg.newEndsAt - room.endsAt;
     const store = useApp.getState();
     store.addMessage(this.id, {
       id: msg.sysId,
