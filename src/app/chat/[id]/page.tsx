@@ -98,7 +98,7 @@ function Bubble({ msg, mine }: { msg: ChatMessage; mine: boolean }) {
               )}
           </div>
         ) : (
-          <p className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed">
+          <p className="whitespace-pre-wrap wrap-break-word text-[14.5px] leading-relaxed">
             {msg.text}
           </p>
         )}
@@ -453,7 +453,7 @@ export default function ChatPage({
                       key={r.id}
                       href={`/chat/${r.id}`}
                       onClick={() => setShowRooms(false)}
-                      className="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-white/[0.04]"
+                      className="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-white/4"
                     >
                       <StatusDot status={r.status} pulse={false} />
                       <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
@@ -501,7 +501,6 @@ export default function ChatPage({
               router.replace("/");
             }}
             aria-label="Tout détruire"
-            title="Maintenir pour détruire"
             className="rounded-lg border border-danger/40 p-2 text-danger transition-colors"
           >
             <Flame size={15} />

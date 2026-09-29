@@ -23,7 +23,11 @@ export const metadata: Metadata = {
     "Discussions instantanées totalement anonymes. Aucun compte, aucune inscription, aucune trace. Chiffrement de bout en bout, WebRTC pair-à-pair, messages jamais stockés.",
   applicationName: "Koragna",
   robots: { index: false, follow: false },
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Koragna" },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Koragna",
+  },
 };
 
 export const viewport: Viewport = {
@@ -35,7 +39,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr" className={`${grotesk.variable} ${jetbrains.variable}`}>
+    <html
+      lang="fr"
+      data-scroll-behavior="smooth"
+      className={`${grotesk.variable} ${jetbrains.variable}`}
+    >
       <body className="noise min-h-dvh antialiased">
         <Providers />
         <BackgroundFX />

@@ -16,23 +16,40 @@ import {
 } from "./store";
 import { compressImage } from "./image";
 
+// Message Easter Egg dans la console
+if (typeof window !== "undefined") {
+  console.clear();
+  console.log("Salut petit curieux, ;-)");
+}
+
 const CHUNK = 16 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_BUFFERED = 1 << 20;
 
-const ICE_SERVERS: RTCIceServer[] = (() => {
-  const custom = process.env.NEXT_PUBLIC_STUN_URLS;
-  if (custom) return custom.split(",").map((u) => ({ urls: u.trim() }));
-  return [
-    {
-      urls: [
-        "stun:stun.l.google.com:19302",
-        "stun:stun1.l.google.com:19302",
-        "stun:stun2.l.google.com:19302",
-      ],
-    },
-  ];
-})();
+let cachedIceServers: RTCIceServer[] = [
+  {
+    urls: [
+      "stun:stun.l.google.com:19302",
+      "stun:stun1.l.google.com:19302",
+      "stun:stun2.l.google.com:19302",
+    ],
+  },
+];
+
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch("/api/turn");
+    if (res.ok) {
+      const servers = (await res.json()) as RTCIceServer[];
+      if (Array.isArray(servers) && servers.length > 0) {
+        cachedIceServers = servers;
+      }
+    }
+  } catch {
+    /* fallback silencieux */
+  }
+  return cachedIceServers;
+}
 
 type AppMsg =
   | { op: "hello"; pub: string; name: string; endsAt?: number; fp: string }
@@ -97,6 +114,9 @@ class PeerSession {
     this.running = true;
     const ident = this.identity;
     if (!ident) return;
+
+    await fetchIceServers();
+
     this.baseKey = await K.deriveBaseKey(ident.pseudo, ident.code);
     if (this.role === "host") void this.hostLoop();
     else void this.guestLoop();
@@ -110,7 +130,6 @@ class PeerSession {
   }
 
   private closePc(): void {
-    // Nettoyage des écouteurs du DataChannel pour éviter les faux événements d'erreur lors de la fermeture
     if (this.dc) {
       this.dc.onopen = null;
       this.dc.onclose = null;
@@ -123,7 +142,6 @@ class PeerSession {
       }
     }
 
-    // Nettoyage des écouteurs de la RTCPeerConnection
     if (this.pc) {
       this.pc.onicecandidate = null;
       this.pc.oniceconnectionstatechange = null;
@@ -149,12 +167,11 @@ class PeerSession {
   private setupPc(initiator: boolean): RTCPeerConnection {
     this.closePc();
     this.ecdh = null;
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: cachedIceServers });
     this.pc = pc;
 
     pc.onicecandidate = (ev) => {
       if (!ev.candidate) return;
-      console.log("📍 [ICE] candidat local", ev.candidate.type, ev.candidate.protocol);
       void signal(
         {
           action: "candidate",
@@ -167,15 +184,12 @@ class PeerSession {
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log("📡 [ICE State]:", pc.iceConnectionState);
       if (pc.iceConnectionState === "failed") {
-        console.warn("⚠️ ICE failed — Réinitialisation de la connexion");
         this.handleDrop();
       }
     };
 
     pc.onconnectionstatechange = () => {
-      console.log("🔗 [Connection State]:", pc.connectionState);
       if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         this.handleDrop();
       }
@@ -186,7 +200,6 @@ class PeerSession {
       this.bindChannel(dc);
     } else {
       pc.ondatachannel = (ev) => {
-        console.log("📥 DataChannel reçu du pair");
         this.bindChannel(ev.channel);
       };
     }
@@ -199,19 +212,14 @@ class PeerSession {
     dc.bufferedAmountLowThreshold = MAX_BUFFERED / 2;
 
     dc.onopen = () => {
-      console.log("🎉 DATA CHANNEL OUVERT — P2P ACTIF !");
       void this.onOpen();
     };
 
     dc.onclose = () => {
-      console.log("ℹ️ DataChannel fermé normalement");
       this.handleDrop();
     };
 
-    // Gestion propre sans console.error pour ne pas bloquer Next.js dev overlay
-    dc.onerror = (ev) => {
-      const err = (ev as RTCErrorEvent)?.error;
-      console.warn("⚠️ Événement DataChannel (erreur/fermeture):", err?.message ?? "événement standard");
+    dc.onerror = () => {
       if (dc.readyState === "closed" || dc.readyState === "closing") {
         this.handleDrop();
       }
@@ -327,9 +335,8 @@ class PeerSession {
         this.abort.signal,
       );
       this.patch({ status: "connecting" });
-      console.log("✅ Host a répondu à l'offer");
-    } catch (err) {
-      console.warn("⚠️ answerOffer échoué:", err);
+    } catch {
+      /* ignore */
     }
   }
 
@@ -350,7 +357,6 @@ class PeerSession {
         );
         first = false;
         this.patch({ note: undefined });
-        console.log("📤 Guest a envoyé l'offer, attente answer…");
         await this.guestWaitAnswer();
         if (this.channelOpen) return;
       } catch (e) {
@@ -386,10 +392,8 @@ class PeerSession {
         this.remoteSet = true;
         try {
           await this.pc.setRemoteDescription({ type: "answer", sdp: snap.answer });
-          console.log("✅ Guest a appliqué l'answer");
           await this.flushPendingCandidates();
-        } catch (err) {
-          console.warn("⚠️ setRemoteDescription(answer) échoué:", err);
+        } catch {
           return;
         }
       }
@@ -530,7 +534,6 @@ class PeerSession {
     } else {
       this.patch({ peerName: name, status: "connected", note: undefined });
     }
-    console.log("✅ Handshake réussi — statut passe à CONNECTED !");
     const updated = this.room();
     if (updated) void persistRoom(updated);
     void signal(
